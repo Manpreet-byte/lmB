@@ -24,7 +24,7 @@ const app = express();
 
 // Enable CORS - allow all origins for deployment (secure later)
 app.use(cors({
-  origin: "https://leave-management-frontend-eta.vercel.app/",
+  origin: process.env.FRONTEND_URL || "https://leave-management-frontend-eta.vercel.app",
   credentials: true,
 }));
 app.use(express.json());
