@@ -40,6 +40,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  firebaseUid: {
+    type: String,
+    default: '',
+    sparse: true, // Allow multiple null values
+  },
   profilePicture: {
     type: String,
     default: '',

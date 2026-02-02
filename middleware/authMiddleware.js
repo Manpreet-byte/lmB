@@ -1,10 +1,13 @@
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/userModel');
+const { auth: firebaseAuth } = require('../config/firebaseAdmin');
 
 const protect = asyncHandler(async (req, res, next) => {
   let token;
-  // Try to get token from cookie first
+  let useFirebaseAuth = false;
+
+  // Try to get token from cookie first (JWT)
   if (req.cookies && req.cookies.jwt) {
     token = req.cookies.jwt;
   } else if (
@@ -12,6 +15,10 @@ const protect = asyncHandler(async (req, res, next) => {
     req.headers.authorization.startsWith('Bearer')
   ) {
     token = req.headers.authorization.split(' ')[1];
+    // Check if it looks like a Firebase token (longer than typical JWT)
+    if (token.length > 500) {
+      useFirebaseAuth = true;
+    }
   }
 
   if (!token) {
@@ -28,13 +35,38 @@ const protect = asyncHandler(async (req, res, next) => {
   }
   
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
-    if (!req.user) {
-      console.log('Auth failed: User not found for token');
-      res.status(401);
-      throw new Error('Not authorized, user not found');
+    if (useFirebaseAuth && firebaseAuth) {
+      // Verify Firebase ID token
+      const decodedToken = await firebaseAuth.verifyIdToken(token);
+      
+      // Find user by Firebase UID or email
+      req.user = await User.findOne({
+        $or: [
+          { firebaseUid: decodedToken.uid },
+          { email: decodedToken.email }
+        ]
+      }).select('-password');
+      
+      if (!req.user) {
+        console.log('Auth failed: User not found for Firebase token');
+        res.status(401);
+        throw new Error('Not authorized, user not found');
+      }
+      
+      // Store Firebase UID for reference
+      req.firebaseUid = decodedToken.uid;
+    } else {
+      // Verify JWT token (traditional MongoDB + JWT auth)
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+      
+      if (!req.user) {
+        console.log('Auth failed: User not found for JWT token');
+        res.status(401);
+        throw new Error('Not authorized, user not found');
+      }
     }
+    
     next();
   } catch (error) {
     console.error('Auth error:', error.message);
